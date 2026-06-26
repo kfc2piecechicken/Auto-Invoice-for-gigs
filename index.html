@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="Gig Invoice">
 <meta name="theme-color" content="#b8553a">
 <title>Gig Invoice</title>
-<script src="https://cdn.jsdelivr.net/npm/jspdf@3.0.3/dist/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>
   :root {
     --bg:#f5f3ee; --card:#fff; --ink:#211f1a; --muted:#6f6c64;
@@ -334,68 +334,85 @@ function calcAd(){
 }
 
 /* ---------- PDF (jsPDF, one-tap named download) ---------- */
+function invoiceHTML({billToLines, items, total, subtitle}){
+  const p=data.profile;
+  const dateStr=new Date().toLocaleDateString('en-SG',{day:'numeric',month:'short',year:'numeric'});
+  const esc=s=>String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const fromHTML=[p.name,p.email,p.phone,p.uen?('UEN/ID: '+p.uen):''].filter(Boolean).map(esc).join('<br>');
+  const billHTML=billToLines.filter(Boolean).map(t=>esc(t).replace(/\n/g,'<br>')).join('<br>');
+  const rows=items.map(it=>`<tr>
+      <td style="padding:11px 4px;border-bottom:0.5px solid #ededed;vertical-align:top;color:#2b2924;">${esc(it.desc||'-')}</td>
+      <td style="padding:11px 4px;border-bottom:0.5px solid #ededed;text-align:right;white-space:nowrap;color:#2b2924;">${esc(it.qty)}</td>
+      <td style="padding:11px 4px;border-bottom:0.5px solid #ededed;text-align:right;white-space:nowrap;color:#2b2924;">$${fmt(it.price)}</td>
+      <td style="padding:11px 4px;border-bottom:0.5px solid #ededed;text-align:right;white-space:nowrap;color:#2b2924;">$${fmt(it.amount)}</td>
+    </tr>`).join('');
+  const payHTML=p.pay?`<div style="margin-top:30px;"><div style="font-size:12px;font-weight:700;color:#2b2924;">Payment</div>
+    <div style="font-size:12px;color:#555;margin-top:4px;line-height:1.6;">${esc(p.pay).replace(/\n/g,'<br>')}</div></div>`:'';
+  const termsHTML=p.terms?`<div style="margin-top:14px;font-size:11px;font-style:italic;color:#999;">${esc(p.terms)}</div>`:'';
+  const subHTML=subtitle?`<div style="font-size:12px;color:#888;margin:0 0 4px;">${esc(subtitle)}</div>`:'';
+
+  return `<div style="width:760px;box-sizing:border-box;padding:54px 50px;background:#fff;
+      font-family:-apple-system,'Helvetica Neue',Arial,'PingFang SC','Noto Sans CJK SC',sans-serif;color:#211f1a;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #a8443a;padding-bottom:16px;">
+      <img src="${LOGO_PNG}" style="height:62px;width:auto;display:block;">
+      <div style="text-align:right;">
+        <div style="font-size:24px;font-weight:700;letter-spacing:2px;color:#211f1a;">INVOICE</div>
+        <div style="font-size:12px;color:#888;margin-top:5px;">${esc(nextNoStr())}</div>
+        <div style="font-size:12px;color:#888;">${esc(dateStr)}</div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:40px;margin-top:26px;">
+      <div style="flex:1;">
+        <div style="font-size:10px;letter-spacing:0.8px;color:#999;font-weight:700;">FROM</div>
+        <div style="font-size:13px;color:#333;margin-top:6px;line-height:1.6;">${fromHTML}</div>
+      </div>
+      <div style="flex:1;">
+        <div style="font-size:10px;letter-spacing:0.8px;color:#999;font-weight:700;">BILL TO</div>
+        <div style="font-size:13px;color:#333;margin-top:6px;line-height:1.6;">${billHTML}</div>
+      </div>
+    </div>
+
+    <div style="margin-top:28px;">${subHTML}
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr>
+          <th style="text-align:left;background:#f3efe9;padding:9px 4px;font-size:10px;letter-spacing:0.6px;color:#666;font-weight:700;">DESCRIPTION</th>
+          <th style="text-align:right;background:#f3efe9;padding:9px 4px;font-size:10px;letter-spacing:0.6px;color:#666;font-weight:700;white-space:nowrap;">QTY</th>
+          <th style="text-align:right;background:#f3efe9;padding:9px 4px;font-size:10px;letter-spacing:0.6px;color:#666;font-weight:700;white-space:nowrap;">UNIT</th>
+          <th style="text-align:right;background:#f3efe9;padding:9px 4px;font-size:10px;letter-spacing:0.6px;color:#666;font-weight:700;white-space:nowrap;">AMOUNT</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div style="border-top:1.5px solid #a8443a;margin-top:12px;padding-top:12px;display:flex;justify-content:flex-end;align-items:baseline;gap:18px;">
+        <span style="font-size:14px;font-weight:700;color:#211f1a;">Total</span>
+        <span style="font-size:15px;font-weight:700;color:#a8443a;">$${fmt(total)} SGD</span>
+      </div>
+    </div>
+
+    ${payHTML}${termsHTML}
+  </div>`;
+}
+
 function makePDF({billToLines, items, total, subtitle, filename}){
-  if(!window.jspdf){ toast('PDF library not loaded — refresh the page'); return false; }
-  const { jsPDF }=window.jspdf;
-  const doc=new jsPDF({unit:'pt',format:'a4'});
-  const W=doc.internal.pageSize.getWidth(), H=doc.internal.pageSize.getHeight();
-  const M=48; const p=data.profile;
-
-  const BRICK=[168,68,58];
-  // --- Header: logo left, INVOICE meta right, aligned to a shared top edge ---
-  const topY=42;                       // top edge of header content
-  const logoH=40, logoW=logoH*LOGO_ASPECT;
-  try { doc.addImage(LOGO_PNG,'PNG',M,topY,logoW,logoH); } catch(e){}
-  // INVOICE meta block, right-aligned, top aligned with logo top
-  doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(33);
-  doc.text('INVOICE',W-M,topY+14,{align:'right'});
-  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(120);
-  doc.text(nextNoStr(),W-M,topY+30,{align:'right'});
-  doc.text(new Date().toLocaleDateString('en-SG',{day:'numeric',month:'short',year:'numeric'}),W-M,topY+43,{align:'right'});
-  doc.setTextColor(33);
-  // brick divider rule, placed just below the taller of logo/meta
-  let y=topY+logoH+14;
-  doc.setDrawColor(BRICK[0],BRICK[1],BRICK[2]); doc.setLineWidth(1.5); doc.line(M,y,W-M,y); doc.setLineWidth(1);
-
-  y+=30;
-  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('From',M,y);
-  doc.text('Bill to',W/2,y);
-  doc.setFont('helvetica','normal'); doc.setFontSize(10);
-  let fy=y+16; [p.name,p.email,p.phone,p.uen?('UEN/ID: '+p.uen):''].filter(Boolean).forEach(t=>{doc.text(latin(t),M,fy);fy+=14;});
-  let by=y+16; billToLines.filter(Boolean).forEach(t=>{String(t).split('\n').forEach(ln=>{doc.text(latin(ln),W/2,by);by+=14;});});
-  y=Math.max(fy,by)+18;
-  if(subtitle){ doc.setFontSize(10); doc.setTextColor(110); doc.text(latin(subtitle),M,y); doc.setTextColor(33); y+=18; }
-
-  const cQty=W-250, cPrice=W-150, cAmt=W-M;
-  doc.setFillColor(243,239,233); doc.rect(M,y,W-2*M,22,'F');
-  doc.setFont('helvetica','bold'); doc.setFontSize(9);
-  doc.text('DESCRIPTION',M+8,y+15); doc.text('QTY',cQty,y+15,{align:'right'});
-  doc.text('UNIT PRICE',cPrice,y+15,{align:'right'}); doc.text('AMOUNT',cAmt-4,y+15,{align:'right'});
-  y+=22;
-  doc.setFont('helvetica','normal'); doc.setFontSize(10);
-  items.forEach(it=>{
-    const lines=doc.splitTextToSize(latin(it.desc)||'-',cQty-M-24);
-    const rowH=Math.max(20,lines.length*13+8);
-    if(y+rowH>H-130){ doc.addPage(); y=56; }
-    doc.text(lines,M+8,y+14);
-    doc.text(String(it.qty),cQty,y+14,{align:'right'});
-    doc.text('$'+fmt(it.price),cPrice,y+14,{align:'right'});
-    doc.text('$'+fmt(it.amount),cAmt-4,y+14,{align:'right'});
-    doc.setDrawColor(235); doc.line(M,y+rowH,W-M,y+rowH); y+=rowH;
+  if(!window.html2pdf){ toast('PDF library not loaded — refresh the page'); return false; }
+  const host=document.createElement('div');
+  host.style.position='fixed'; host.style.left='-9999px'; host.style.top='0';
+  host.innerHTML=invoiceHTML({billToLines, items, total, subtitle});
+  document.body.appendChild(host);
+  const el=host.firstElementChild;
+  toast('Generating PDF…');
+  window.html2pdf().set({
+    margin:0,
+    filename:filename,
+    image:{type:'jpeg',quality:0.98},
+    html2canvas:{scale:3,useCORS:true,backgroundColor:'#ffffff'},
+    jsPDF:{unit:'pt',format:'a4',orientation:'portrait'}
+  }).from(el).save().then(()=>{
+    document.body.removeChild(host);
+  }).catch(()=>{
+    try{document.body.removeChild(host);}catch(e){}
+    toast('PDF failed — try again');
   });
-  y+=10; doc.setDrawColor(BRICK[0],BRICK[1],BRICK[2]); doc.setLineWidth(1.5); doc.line(cPrice-40,y,W-M,y); doc.setLineWidth(1);
-  y+=18; doc.setFont('helvetica','bold'); doc.setFontSize(12);
-  doc.text('Total',cPrice,y,{align:'right'});
-  doc.setTextColor(BRICK[0],BRICK[1],BRICK[2]); doc.text('$'+fmt(total)+' SGD',cAmt-4,y,{align:'right'}); doc.setTextColor(33);
-
-  y+=40;
-  if(p.pay){ doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.text('Payment',M,y);
-    doc.setFont('helvetica','normal'); doc.setTextColor(70); let py=y+15;
-    p.pay.split('\n').forEach(t=>{doc.text(t,M,py);py+=14;}); doc.setTextColor(33); y=py; }
-  if(p.terms){ y+=8; doc.setFont('helvetica','italic'); doc.setFontSize(9.5); doc.setTextColor(120);
-    doc.text(p.terms,M,y); doc.setTextColor(33); }
-
-  doc.save(filename);
   return true;
 }
 
@@ -453,7 +470,7 @@ function initMonthYear(){
 }
 (function init(){
   document.getElementById('logoImg').src = LOGO_PNG;
-  if(!window.jspdf) document.getElementById('noPdfWarn').classList.remove('hidden');
+  if(!window.html2pdf) document.getElementById('noPdfWarn').classList.remove('hidden');
   fillProfileForm(); profileSummary();
   perfList.innerHTML=''; addPerfRow();
   renderVenues(); initMonthYear();
