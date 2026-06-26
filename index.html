@@ -367,56 +367,61 @@ function invoiceHTML({billToLines, items, total, subtitle}){
   const esc=s=>String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
   const fromHTML=[p.name,p.email,p.phone,p.uen?('UEN/ID: '+p.uen):''].filter(Boolean).map(esc).join('<br>');
   const billHTML=billToLines.filter(Boolean).map(t=>esc(t).replace(/\n/g,'<br>')).join('<br>');
-  const rows=items.map(it=>`<tr>
-      <td style="padding:13px 4px;border-bottom:0.5px solid #ededed;vertical-align:top;color:#211f1a;font-weight:600;">${esc(it.desc||'-')}</td>
-      <td style="padding:13px 4px;border-bottom:0.5px solid #ededed;text-align:right;white-space:nowrap;color:#444;">${esc(it.qty)}</td>
-      <td style="padding:13px 4px;border-bottom:0.5px solid #ededed;text-align:right;white-space:nowrap;color:#444;">$${fmt(it.price)}</td>
-      <td style="padding:13px 4px;border-bottom:0.5px solid #ededed;text-align:right;white-space:nowrap;color:#211f1a;font-weight:700;">$${fmt(it.amount)}</td>
-    </tr>`).join('');
-  const payHTML=p.pay?`<div style="margin-top:30px;"><div style="font-size:12px;font-weight:700;color:#2b2924;">Payment</div>
-    <div style="font-size:12px;color:#555;margin-top:4px;line-height:1.6;">${esc(p.pay).replace(/\n/g,'<br>')}</div></div>`:'';
-  const termsHTML=p.terms?`<div style="margin-top:14px;font-size:11px;font-style:italic;color:#999;">${esc(p.terms)}</div>`:'';
-  const subHTML=subtitle?`<div style="font-size:12px;color:#888;margin:0 0 4px;">${esc(subtitle)}</div>`:'';
+  const rows=items.map(it=>{
+    // bold the part before the date parenthesis, keep dates regular
+    const raw=esc(it.desc||'-');
+    const m=raw.match(/^(.*?)(\s*\([^()]*\))\s*$/);
+    const descHTML=m?`<b>${m[1]}</b><span style="color:#555;">${m[2]}</span>`:`<b>${raw}</b>`;
+    return `<tr>
+      <td style="padding:14px 4px;border-bottom:0.5px solid #ededed;vertical-align:top;color:#1c1a17;">${descHTML}</td>
+      <td style="padding:14px 4px;border-bottom:0.5px solid #ededed;text-align:right;white-space:nowrap;color:#555;">${esc(it.qty)}</td>
+      <td style="padding:14px 4px;border-bottom:0.5px solid #ededed;text-align:right;white-space:nowrap;color:#555;">$${fmt(it.price)}</td>
+      <td style="padding:14px 4px;border-bottom:0.5px solid #ededed;text-align:right;white-space:nowrap;color:#1c1a17;font-weight:700;">$${fmt(it.amount)}</td>
+    </tr>`;}).join('');
+  const payHTML=p.pay?`<div style="margin-top:36px;"><div style="font-size:13px;font-weight:700;color:#1c1a17;">Payment</div>
+    <div style="font-size:13px;color:#555;margin-top:5px;line-height:1.7;">${esc(p.pay).replace(/\n/g,'<br>')}</div></div>`:'';
+  const termsHTML=p.terms?`<div style="margin-top:12px;font-size:11px;font-style:italic;color:#999;">${esc(p.terms)}</div>`:'';
+  const subHTML=subtitle?`<div style="font-size:12px;color:#8a857c;margin:0 0 6px;">${esc(subtitle)}</div>`:'';
 
-  return `<div style="width:760px;box-sizing:border-box;padding:54px 50px;background:#fff;
-      font-family:'Poppins',-apple-system,'Helvetica Neue',Arial,sans-serif;color:#211f1a;">
-    <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #a8443a;padding-bottom:12px;">
-      <img src="${LOGO_PNG}" style="height:52px;width:auto;display:block;">
-      <div style="text-align:right;">
-        <div style="font-size:25px;font-weight:700;letter-spacing:2px;color:#211f1a;">INVOICE</div>
-        <div style="font-size:12px;font-weight:700;color:#555;margin-top:5px;">${esc(nextNoStr())}</div>
-        <div style="font-size:12px;color:#888;">${esc(dateStr)}</div>
+  return `<div style="width:794px;min-height:1123px;box-sizing:border-box;background:#fff;display:flex;
+      font-family:'Poppins',-apple-system,'Helvetica Neue',Arial,sans-serif;color:#1c1a17;">
+    <div style="width:14px;background:#a8443a;"></div>
+    <div style="flex:1;padding:56px 50px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;">
+        <img src="${LOGO_PNG}" style="height:50px;width:auto;display:block;">
+        <div style="font-size:40px;font-weight:700;letter-spacing:1px;color:#a8443a;line-height:1;">INVOICE</div>
       </div>
+      <div style="font-size:12px;color:#8a857c;margin-top:8px;text-align:right;"><b style="color:#1c1a17;">${esc(nextNoStr())}</b> · ${esc(dateStr)}</div>
+
+      <div style="display:flex;gap:40px;margin-top:38px;">
+        <div style="flex:1;">
+          <div style="font-size:10px;letter-spacing:1.5px;color:#8a857c;font-weight:700;">FROM</div>
+          <div style="font-size:13.5px;color:#1c1a17;margin-top:8px;line-height:1.7;">${fromHTML}</div>
+        </div>
+        <div style="flex:1;">
+          <div style="font-size:10px;letter-spacing:1.5px;color:#8a857c;font-weight:700;">BILL TO</div>
+          <div style="font-size:13.5px;color:#1c1a17;margin-top:8px;line-height:1.7;">${billHTML}</div>
+        </div>
+      </div>
+
+      <div style="margin-top:38px;">${subHTML}
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead><tr>
+            <th style="text-align:left;border-bottom:2px solid #a8443a;padding:9px 4px;font-size:10px;letter-spacing:1px;color:#8a857c;font-weight:700;">DESCRIPTION</th>
+            <th style="text-align:right;border-bottom:2px solid #a8443a;padding:9px 4px;font-size:10px;letter-spacing:1px;color:#8a857c;font-weight:700;white-space:nowrap;">QTY</th>
+            <th style="text-align:right;border-bottom:2px solid #a8443a;padding:9px 4px;font-size:10px;letter-spacing:1px;color:#8a857c;font-weight:700;white-space:nowrap;">UNIT</th>
+            <th style="text-align:right;border-bottom:2px solid #a8443a;padding:9px 4px;font-size:10px;letter-spacing:1px;color:#8a857c;font-weight:700;white-space:nowrap;">AMOUNT</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div style="border-top:3px solid #1c1a17;margin-top:14px;padding-top:16px;display:flex;justify-content:flex-end;align-items:baseline;gap:18px;">
+          <span style="font-size:16px;font-weight:700;color:#1c1a17;">Total</span>
+          <span style="font-size:28px;font-weight:700;color:#a8443a;line-height:1;">$${fmt(total)}<span style="font-size:15px;"> SGD</span></span>
+        </div>
+      </div>
+
+      ${payHTML}${termsHTML}
     </div>
-
-    <div style="display:flex;gap:40px;margin-top:28px;">
-      <div style="flex:1;">
-        <div style="font-size:10px;letter-spacing:1px;color:#999;font-weight:600;">FROM</div>
-        <div style="font-size:13.5px;color:#211f1a;font-weight:600;margin-top:8px;line-height:1.7;">${fromHTML}</div>
-      </div>
-      <div style="flex:1;">
-        <div style="font-size:10px;letter-spacing:1px;color:#999;font-weight:600;">BILL TO</div>
-        <div style="font-size:13.5px;color:#211f1a;font-weight:600;margin-top:8px;line-height:1.7;">${billHTML}</div>
-      </div>
-    </div>
-
-    <div style="margin-top:32px;">${subHTML}
-      <table style="width:100%;border-collapse:collapse;font-size:13px;">
-        <thead><tr>
-          <th style="text-align:left;background:#f3efe9;padding:11px 4px;font-size:10px;letter-spacing:0.8px;color:#666;font-weight:600;">DESCRIPTION</th>
-          <th style="text-align:right;background:#f3efe9;padding:11px 4px;font-size:10px;letter-spacing:0.8px;color:#666;font-weight:600;white-space:nowrap;">QTY</th>
-          <th style="text-align:right;background:#f3efe9;padding:11px 4px;font-size:10px;letter-spacing:0.8px;color:#666;font-weight:600;white-space:nowrap;">UNIT</th>
-          <th style="text-align:right;background:#f3efe9;padding:11px 4px;font-size:10px;letter-spacing:0.8px;color:#666;font-weight:600;white-space:nowrap;">AMOUNT</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <div style="border-top:1.5px solid #a8443a;margin-top:14px;padding-top:16px;display:flex;justify-content:flex-end;align-items:baseline;gap:18px;">
-        <span style="font-size:15px;font-weight:600;color:#211f1a;">Total</span>
-        <span style="font-size:19px;font-weight:700;color:#a8443a;">$${fmt(total)} SGD</span>
-      </div>
-    </div>
-
-    ${payHTML}${termsHTML}
   </div>`;
 }
 
@@ -432,8 +437,8 @@ function makePDF({billToLines, items, total, subtitle, filename}){
     margin:0,
     filename:filename,
     image:{type:'jpeg',quality:0.98},
-    html2canvas:{scale:3,useCORS:true,backgroundColor:'#ffffff'},
-    jsPDF:{unit:'pt',format:'a4',orientation:'portrait'}
+    html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',windowWidth:794,width:794},
+    jsPDF:{unit:'px',format:[794,1123],orientation:'portrait',hotfixes:['px_scaling']}
   }).from(el).save().then(()=>{
     document.body.removeChild(host);
   }).catch(()=>{
