@@ -383,10 +383,9 @@ function invoiceHTML({billToLines, items, total, subtitle}){
   const termsHTML=p.terms?`<div style="margin-top:12px;font-size:11px;font-style:italic;color:#999;">${esc(p.terms)}</div>`:'';
   const subHTML=subtitle?`<div style="font-size:12px;color:#8a857c;margin:0 0 6px;">${esc(subtitle)}</div>`:'';
 
-  return `<div style="width:794px;min-height:1123px;box-sizing:border-box;background:#fff;display:flex;
+  return `<div style="width:794px;min-height:1123px;box-sizing:border-box;background:#fff;
+      border-left:14px solid #a8443a;padding:56px 50px;
       font-family:'Poppins',-apple-system,'Helvetica Neue',Arial,sans-serif;color:#1c1a17;">
-    <div style="width:14px;background:#a8443a;"></div>
-    <div style="flex:1;padding:56px 50px;">
       <div style="display:flex;justify-content:space-between;align-items:flex-end;">
         <img src="${LOGO_PNG}" style="height:50px;width:auto;display:block;">
         <div style="font-size:40px;font-weight:700;letter-spacing:1px;color:#a8443a;line-height:1;">INVOICE</div>
@@ -421,7 +420,6 @@ function invoiceHTML({billToLines, items, total, subtitle}){
       </div>
 
       ${payHTML}${termsHTML}
-    </div>
   </div>`;
 }
 
