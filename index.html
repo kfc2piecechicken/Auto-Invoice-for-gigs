@@ -138,11 +138,18 @@
           <option value="5">5 months</option>
           <option value="6">6 months</option>
         </select>
-        <div style="font-size:11px;color:var(--muted);margin-top:4px;">Batches create one PDF with a page per month, each its own invoice number, dated that month's last gig day.</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">Batches create one page per month, each its own invoice number, dated that month's last gig day.</div>
+      </div>
+      <div class="field"><label>When batching, output as</label>
+        <select id="genOutput">
+          <option value="combined">One combined PDF (one save)</option>
+          <option value="separate">Separate PDF per month (one save each)</option>
+        </select>
       </div>
       <div id="recPreview" class="preview"></div>
       <div id="recTotals" class="totals hidden"></div>
       <button class="primary block" style="margin-top:12px;" onclick="genRecurring()">Download PDF</button>
+      <div id="batchLinks" class="hidden" style="margin-top:14px;"></div>
     </div>
   </div>
 
@@ -598,31 +605,53 @@ function genRecurring(){
   const months=parseInt(genMonths?genMonths.value:1)||1;
   if(isNaN(startM)||isNaN(startY)) return toast('Pick a month and year');
   const vi=parseInt(genVenue.value); if(isNaN(vi)||!data.venues[vi]) return toast('Add a venue first');
+  const v=data.venues[vi];
+  const separate = (genOutput && genOutput.value==='separate' && months>1);
 
-  const pages=[]; const names=[]; let num=data.counter; let grandFirst=null;
+  const pages=[]; const metas=[]; const names=[]; let num=data.counter; let grandFirst=null;
   for(let k=0;k<months;k++){
     const mm=(startM+k)%12, yy=startY+Math.floor((startM+k)/12);
     const r=recData(mm,yy);
     if(!r||!r.lines.length) continue; // skip months with no gigs
     const docNo=(data.profile.prefix||'')+String(num);
-    pages.push({
+    const page={
       billToLines:[r.venue.billName||r.venue.name, r.venue.billAttn?'Attn: '+r.venue.billAttn:'', r.venue.billAddr||''],
       items:recItems(r), total:r.total,
       subtitle:`Performance services — ${MONTHS[mm]} ${yy}`,
       docType:'INVOICE', docNo, dateObj:lastGigDate(r)
-    });
+    };
+    pages.push(page);
+    metas.push({docNo, month:MONTHS[mm], year:yy});
     names.push(MONTHS[mm].slice(0,3));
     if(grandFirst==null) grandFirst=docNo;
     num++;
   }
   if(!pages.length) return toast('No gig days fall in the selected months');
 
-  const v=data.venues[vi];
+  if(separate){
+    // Mobile-safe: show a button per invoice so each open is a user tap (no popup blocking)
+    const wrap=document.getElementById('batchLinks');
+    wrap.innerHTML='<div style="font-size:13px;color:var(--muted);margin-bottom:8px;">Tap each to open and save (one at a time):</div>';
+    pages.forEach((pg,i)=>{
+      const fn=safeName(`${metas[i].docNo} ${v.name} ${metas[i].month}`)+'.pdf';
+      const btn=document.createElement('button');
+      btn.className='primary block'; btn.style.marginBottom='8px';
+      btn.textContent=`Open ${metas[i].docNo} · ${metas[i].month} ${metas[i].year}`;
+      btn.onclick=()=>{ makePDF({pages:[pg], filename:fn}); btn.style.opacity='0.5'; btn.textContent=`✓ ${metas[i].docNo} · ${metas[i].month} ${metas[i].year}`; };
+      wrap.appendChild(btn);
+    });
+    wrap.classList.remove('hidden');
+    data.counter=num; save(); refreshNext();
+    toast(`${pages.length} invoices ready — tap each below`);
+    return;
+  }
+  document.getElementById('batchLinks').classList.add('hidden');
+
   const fname=safeName(`${grandFirst} ${v.name} ${names[0]}${names.length>1?'-'+names[names.length-1]:''} ${startY}`)+'.pdf';
   const ok=makePDF({pages, filename:fname});
   if(ok){
     data.counter=num; save(); refreshNext();
-    toast(pages.length>1?`${pages.length} invoices — tap Print to save`:'Opening invoice — tap Print to save');
+    toast(pages.length>1?`${pages.length} invoices in one PDF — tap Print to save`:'Opening invoice — tap Print to save');
   }
 }
 
