@@ -336,23 +336,25 @@ function makePDF({billToLines, items, total, subtitle, filename}){
   const { jsPDF }=window.jspdf;
   const doc=new jsPDF({unit:'pt',format:'a4'});
   const W=doc.internal.pageSize.getWidth(), H=doc.internal.pageSize.getHeight();
-  const M=48; let y=56; const p=data.profile;
+  const M=48; const p=data.profile;
 
   const BRICK=[168,68,58];
-  // Logo image top-left
-  const logoH=34, logoW=logoH*LOGO_ASPECT;
-  try { doc.addImage(LOGO_PNG,'PNG',M,y-18,logoW,logoH); } catch(e){}
-  // INVOICE label + meta top-right
-  doc.setFont('helvetica','bold'); doc.setFontSize(20); doc.setTextColor(33);
-  doc.text('INVOICE',W-M,y-2,{align:'right'});
-  doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(110);
-  doc.text(nextNoStr(),W-M,y+13,{align:'right'});
-  doc.text(new Date().toLocaleDateString('en-SG',{day:'numeric',month:'short',year:'numeric'}),W-M,y+26,{align:'right'});
+  // --- Header: logo left, INVOICE meta right, aligned to a shared top edge ---
+  const topY=42;                       // top edge of header content
+  const logoH=40, logoW=logoH*LOGO_ASPECT;
+  try { doc.addImage(LOGO_PNG,'PNG',M,topY,logoW,logoH); } catch(e){}
+  // INVOICE meta block, right-aligned, top aligned with logo top
+  doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(33);
+  doc.text('INVOICE',W-M,topY+14,{align:'right'});
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(120);
+  doc.text(nextNoStr(),W-M,topY+30,{align:'right'});
+  doc.text(new Date().toLocaleDateString('en-SG',{day:'numeric',month:'short',year:'numeric'}),W-M,topY+43,{align:'right'});
   doc.setTextColor(33);
-  // brick divider rule
-  y+=34; doc.setDrawColor(BRICK[0],BRICK[1],BRICK[2]); doc.setLineWidth(2); doc.line(M,y,W-M,y); doc.setLineWidth(1);
+  // brick divider rule, placed just below the taller of logo/meta
+  let y=topY+logoH+14;
+  doc.setDrawColor(BRICK[0],BRICK[1],BRICK[2]); doc.setLineWidth(1.5); doc.line(M,y,W-M,y); doc.setLineWidth(1);
 
-  y+=34;
+  y+=30;
   doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('From',M,y);
   doc.text('Bill to',W/2,y);
   doc.setFont('helvetica','normal'); doc.setFontSize(10);
