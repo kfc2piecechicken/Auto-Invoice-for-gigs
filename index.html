@@ -96,8 +96,9 @@
 
   <!-- TABS -->
   <div class="tabs">
-    <div class="tab active" id="tabRec" onclick="switchTab('rec')">Recurring gigs</div>
-    <div class="tab" id="tabAdhoc" onclick="switchTab('adhoc')">Ad-hoc invoice</div>
+    <div class="tab active" id="tabRec" onclick="switchTab('rec')">Recurring</div>
+    <div class="tab" id="tabAdhoc" onclick="switchTab('adhoc')">Ad-hoc</div>
+    <div class="tab" id="tabQuote" onclick="switchTab('quote')">Quote</div>
   </div>
 
   <!-- RECURRING -->
@@ -125,8 +126,19 @@
       <h2>Generate invoice</h2>
       <div class="gen-row" style="margin-top:8px;">
         <div class="field" style="flex:2;"><label>Venue</label><select id="genVenue" onchange="updatePreview()"></select></div>
-        <div class="field" style="flex:2;"><label>Month</label><select id="genMonth" onchange="updatePreview()"></select></div>
+        <div class="field" style="flex:2;"><label>Start month</label><select id="genMonth" onchange="updatePreview()"></select></div>
         <div class="field" style="flex:1;"><label>Year</label><input id="genYear" type="number" inputmode="numeric" onchange="updatePreview()" oninput="updatePreview()"></div>
+      </div>
+      <div class="field"><label>Generate how many months (batch)</label>
+        <select id="genMonths" onchange="updatePreview()">
+          <option value="1">1 month</option>
+          <option value="2">2 months</option>
+          <option value="3">3 months</option>
+          <option value="4">4 months</option>
+          <option value="5">5 months</option>
+          <option value="6">6 months</option>
+        </select>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;">Batches create one PDF with a page per month, each its own invoice number, dated that month's last gig day.</div>
       </div>
       <div id="recPreview" class="preview"></div>
       <div id="recTotals" class="totals hidden"></div>
@@ -148,6 +160,25 @@
       <button onclick="addAdItem()">+ Add line</button>
       <div id="adTotals" class="totals"></div>
       <button class="primary block" style="margin-top:12px;" onclick="genAdhoc()">Download PDF</button>
+    </div>
+  </div>
+
+  <!-- QUOTE -->
+  <div id="quotePanel" class="hidden">
+    <div class="card">
+      <h2>Quote to</h2>
+      <div class="field" style="margin-top:8px;"><label>Client / company name</label><input id="qName"></div>
+      <div class="field"><label>Attention to (optional)</label><input id="qAttn"></div>
+      <div class="field"><label>Full address</label><textarea id="qAddr"></textarea></div>
+    </div>
+    <div class="card">
+      <h2>Line items</h2>
+      <div id="qItems" style="margin-top:8px;"></div>
+      <button onclick="addQItem()">+ Add line</button>
+      <div id="qTotals" class="totals"></div>
+      <div class="field" style="margin-top:12px;"><label>Quote validity note (shown on quote)</label><input id="qValidity" placeholder="Valid for 30 days from date of quote"></div>
+      <button class="primary block" style="margin-top:12px;" onclick="genQuote()">Download PDF</button>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px;">Quotes use their own number series (Q-…) and don't affect your invoice numbers.</div>
     </div>
   </div>
 
@@ -190,6 +221,8 @@ function loadData(){
   if(/[\u3400-\u9FFF\uF900-\uFAFF]/.test(d.profile.name||'')) d.profile.name=DEFAULT_PROFILE.name;
   d.venues = Array.isArray(d.venues)?d.venues:[];
   d.counter = d.counter||1;
+  d.quoteCounter = d.quoteCounter||1;
+  d.quotePrefix = d.quotePrefix||('Q-'+new Date().getFullYear()+'-');
   return d;
 }
 function save(){ try { localStorage.setItem(LS, JSON.stringify(data)); } catch(e){} }
@@ -223,8 +256,8 @@ function saveProfile(){
 
 /* ---------- TABS ---------- */
 function switchTab(t){
-  tabRec.classList.toggle('active',t==='rec'); tabAdhoc.classList.toggle('active',t==='adhoc');
-  recPanel.classList.toggle('hidden',t!=='rec'); adhocPanel.classList.toggle('hidden',t!=='adhoc');
+  tabRec.classList.toggle('active',t==='rec'); tabAdhoc.classList.toggle('active',t==='adhoc'); tabQuote.classList.toggle('active',t==='quote');
+  recPanel.classList.toggle('hidden',t!=='rec'); adhocPanel.classList.toggle('hidden',t!=='adhoc'); quotePanel.classList.toggle('hidden',t!=='quote');
 }
 
 /* ---------- VENUE FORM ---------- */
@@ -316,9 +349,11 @@ function renderVenues(){
 /* ---------- COUNTING + PREVIEW ---------- */
 function countWeekday(year,month,wd){ const out=[]; const last=new Date(year,month+1,0).getDate();
   for(let d=1;d<=last;d++) if(new Date(year,month,d).getDay()===wd) out.push(d); return out; }
-function recData(){
+function recData(mOverride,yOverride){
   const vi=parseInt(genVenue.value); if(isNaN(vi)||!data.venues[vi]) return null;
-  const v=data.venues[vi], m=parseInt(genMonth.value), y=parseInt(genYear.value);
+  const v=data.venues[vi];
+  const m=(mOverride!=null)?mOverride:parseInt(genMonth.value);
+  const y=(yOverride!=null)?yOverride:parseInt(genYear.value);
   if(isNaN(y)) return null;
   const lines=[]; let total=0;
   v.performers.forEach(p=>p.days.forEach(wd=>{
@@ -327,7 +362,44 @@ function recData(){
   }));
   return {venue:v,m,y,lines,total};
 }
+// last actual gig day in a month for a given rec dataset
+function lastGigDate(r){
+  let maxDay=0; r.lines.forEach(l=>l.dates.forEach(d=>{ if(d>maxDay) maxDay=d; }));
+  return new Date(r.y, r.m, maxDay||1);
+}
+// build the grouped item list (header + performer rows, or single line) from a rec dataset
+function recItems(r){
+  const allDates=[...new Set(r.lines.flatMap(l=>l.dates))].sort((a,b)=>a-b);
+  const dayNames=[...new Set(r.lines.map(l=>WD[l.weekday]))];
+  const items=[];
+  if(r.lines.length>1){
+    items.push({header:`${r.venue.name} — ${dayNames.join(' & ')}s`, sub:`${allDates.join(', ')} ${MONTHS[r.m]}`});
+    r.lines.forEach(l=>items.push({desc:l.performer, qty:l.qty, price:l.rate, amount:l.amount, indent:true}));
+  } else {
+    const l=r.lines[0];
+    items.push({desc:`${r.venue.name} ${WD[l.weekday]}s — ${l.performer} (${l.dates.join(', ')} ${MONTHS[r.m]})`, qty:l.qty, price:l.rate, amount:l.amount});
+  }
+  return items;
+}
 function updatePreview(){
+  const months=parseInt(genMonths?genMonths.value:1)||1;
+  const startM=parseInt(genMonth.value), startY=parseInt(genYear.value);
+  if(months>1){
+    // batch preview: list each month + its projected number + total
+    let num=data.counter, blocks=[], grand=0, any=false;
+    for(let k=0;k<months;k++){
+      const mm=(startM+k)%12, yy=startY+Math.floor((startM+k)/12);
+      const r=recData(mm,yy);
+      if(!r||!r.lines.length){ blocks.push(`${MONTHS[mm]} ${yy}: no gigs`); continue; }
+      any=true; grand+=r.total;
+      blocks.push(`<b>${(data.profile.prefix||'')+num}</b> · ${MONTHS[mm]} ${yy} — $${fmt(r.total)}`);
+      num++;
+    }
+    recPreview.innerHTML=blocks.join('<br>');
+    if(any){ recTotals.innerHTML=`<span style="color:var(--muted);font-size:13px;">Batch total </span><span class="big">$${fmt(grand)}</span>`; recTotals.classList.remove('hidden'); }
+    else recTotals.classList.add('hidden');
+    return;
+  }
   const r=recData();
   if(!r){ recPreview.innerHTML=''; recTotals.classList.add('hidden'); return; }
   if(!r.lines.length){ recPreview.innerHTML='No gig days fall in this month.'; recTotals.classList.add('hidden'); return; }
@@ -362,10 +434,55 @@ function calcAd(){
   adTotals.innerHTML=`<span style="color:var(--muted);font-size:13px;">Total </span><span class="big">$${fmt(total)}</span>`;
 }
 
-/* ---------- PDF (jsPDF, one-tap named download) ---------- */
-function invoiceHTML({billToLines, items, total, subtitle}){
+/* ---------- QUOTE ---------- */
+function quoteNoStr(){ return (data.quotePrefix||('Q-'+new Date().getFullYear()+'-'))+String(data.quoteCounter||1); }
+function addQItem(desc='',qty='1',price=''){
+  const row=document.createElement('div'); row.className='perf';
+  row.innerHTML=
+    `<div class="field" style="margin-bottom:8px;"><label>Description</label><input class="d" value="${desc}" oninput="calcQ()"></div>
+     <div style="display:flex; gap:8px; align-items:flex-end;">
+       <div class="field" style="flex:1; margin:0;"><label>Qty</label><input class="q" type="number" inputmode="decimal" value="${qty}" oninput="calcQ()"></div>
+       <div class="field" style="flex:1; margin:0;"><label>Unit price</label><input class="p" type="number" inputmode="decimal" value="${price}" oninput="calcQ()"></div>
+       <div class="amt" style="flex:1; text-align:right; padding-bottom:10px; color:var(--muted);">$0.00</div>
+       <button class="iconbtn" style="margin-bottom:4px;" onclick="this.closest('.perf').remove();calcQ()">✕</button>
+     </div>`;
+  qItems.appendChild(row); calcQ();
+}
+function readQ(){
+  return [...qItems.children].map(r=>{
+    const desc=r.querySelector('.d').value;
+    const qty=parseFloat(r.querySelector('.q').value)||0;
+    const price=parseFloat(r.querySelector('.p').value)||0;
+    return {desc,qty,price,amount:qty*price,_el:r.querySelector('.amt')};
+  });
+}
+function calcQ(){
+  let total=0; readQ().forEach(it=>{ it._el.textContent='$'+fmt(it.amount); total+=it.amount; });
+  qTotals.innerHTML=`<span style="color:var(--muted);font-size:13px;">Total </span><span class="big">$${fmt(total)}</span>`;
+}
+function genQuote(){
+  const items=readQ().filter(it=>it.desc.trim()||it.amount>0).map(it=>({desc:it.desc,qty:it.qty,price:it.price,amount:it.amount}));
+  if(!items.length) return toast('Add at least one line item');
+  const total=items.reduce((s,it)=>s+it.amount,0);
+  // stash validity into profile so invoiceHTML can render it
+  data.profile.quoteValidity=qValidity.value.trim()||'Valid for 30 days from date of quote';
+  const who=qName.value.trim()||'Quote';
+  const noStr=quoteNoStr();
+  const fname=safeName(`${noStr} ${who}`)+'.pdf';
+  const ok=makePDF({
+    billToLines:[qName.value, qAttn.value?'Attn: '+qAttn.value:'', qAddr.value],
+    items, total, subtitle:null, docType:'QUOTATION', docNo:noStr, dateObj:new Date(), filename:fname
+  });
+  if(ok){ data.quoteCounter=(data.quoteCounter||1)+1; save(); toast('Opening quote — tap Print to save'); }
+}
+
+/* ---------- document page HTML (invoice or quotation) ---------- */
+function invoiceHTML({billToLines, items, total, subtitle, docType, docNo, dateObj, showPayment}){
   const p=data.profile;
-  const dateStr=new Date().toLocaleDateString('en-SG',{day:'numeric',month:'short',year:'numeric'});
+  const label=docType||'INVOICE';
+  const noStr=(docNo!=null)?docNo:nextNoStr();
+  const dObj=dateObj||new Date();
+  const dateStr=dObj.toLocaleDateString('en-SG',{day:'numeric',month:'short',year:'numeric'});
   const esc=s=>String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
   const fromHTML=[p.name,p.email,p.phone,p.uen?('UEN/ID: '+p.uen):''].filter(Boolean).map(esc).join('<br>');
   const billHTML=billToLines.filter(Boolean).map(t=>esc(t).replace(/\n/g,'<br>')).join('<br>');
@@ -388,9 +505,13 @@ function invoiceHTML({billToLines, items, total, subtitle}){
       <td style="${pad}border-bottom:0.5px solid #ededed;text-align:right;white-space:nowrap;color:#555;">$${fmt(it.price)}</td>
       <td style="${pad}border-bottom:0.5px solid #ededed;text-align:right;white-space:nowrap;color:#1c1a17;font-weight:700;">$${fmt(it.amount)}</td>
     </tr>`;}).join('');
-  const payHTML=p.pay?`<div style="margin-top:36px;"><div style="font-size:13px;font-weight:700;color:#1c1a17;">Payment</div>
+  const isQuote=(label==='QUOTATION');
+  const payHTML=(!isQuote && showPayment!==false && p.pay)?`<div style="margin-top:36px;"><div style="font-size:13px;font-weight:700;color:#1c1a17;">Payment</div>
     <div style="font-size:13px;color:#555;margin-top:5px;line-height:1.7;">${esc(p.pay).replace(/\n/g,'<br>')}</div></div>`:'';
-  const termsHTML=p.terms?`<div style="margin-top:12px;font-size:11px;font-style:italic;color:#999;">${esc(p.terms)}</div>`:'';
+  const footerNote=isQuote
+    ? (p.quoteValidity?`<div style="margin-top:36px;font-size:12px;font-style:italic;color:#999;">${esc(p.quoteValidity)}</div>`:'')
+    : (p.terms?`<div style="margin-top:12px;font-size:11px;font-style:italic;color:#999;">${esc(p.terms)}</div>`:'');
+  const termsHTML=footerNote;
   const subHTML=subtitle?`<div style="font-size:12px;color:#8a857c;margin:0 0 6px;">${esc(subtitle)}</div>`:'';
 
   return `<div style="width:100%;min-height:297mm;box-sizing:border-box;background:#fff;
@@ -398,9 +519,9 @@ function invoiceHTML({billToLines, items, total, subtitle}){
       font-family:'Poppins',-apple-system,'Helvetica Neue',Arial,sans-serif;color:#1c1a17;">
       <div style="display:flex;justify-content:space-between;align-items:flex-end;">
         <img src="${LOGO_PNG}" style="height:50px;width:auto;display:block;">
-        <div style="font-size:40px;font-weight:700;letter-spacing:1px;color:#a8443a;line-height:1;">INVOICE</div>
+        <div style="font-size:40px;font-weight:700;letter-spacing:1px;color:#a8443a;line-height:1;">${esc(label)}</div>
       </div>
-      <div style="font-size:12px;color:#8a857c;margin-top:8px;text-align:right;"><b style="color:#1c1a17;">${esc(nextNoStr())}</b> · ${esc(dateStr)}</div>
+      <div style="font-size:12px;color:#8a857c;margin-top:8px;text-align:right;"><b style="color:#1c1a17;">${esc(noStr)}</b> · ${esc(dateStr)}</div>
 
       <div style="display:flex;gap:40px;margin-top:38px;">
         <div style="flex:1;">
@@ -433,28 +554,33 @@ function invoiceHTML({billToLines, items, total, subtitle}){
   </div>`;
 }
 
-function makePDF({billToLines, items, total, subtitle, filename}){
+function makePDF(opts){
   const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  const inner=invoiceHTML({billToLines, items, total, subtitle});
+  const filename=opts.filename;
+  // accept either a single page (legacy args) or {pages:[...]}
+  const pages = opts.pages ? opts.pages : [opts];
+  const sheets = pages.map((pg,i)=>
+    `<div class="sheet"${i>0?' style="page-break-before:always;"':''}>${invoiceHTML(pg)}</div>`
+  ).join('');
   const docHTML=`<!DOCTYPE html><html><head><meta charset="utf-8">
-    <title>${esc(filename.replace(/\.pdf$/,''))}</title>
+    <title>${esc((filename||'document').replace(/\.pdf$/,''))}</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
       @page { size: A4; margin: 0; }
       * { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
       html,body { margin:0; padding:0; background:#fff; }
       .sheet { width:210mm; min-height:297mm; }
-      @media screen { body{ background:#e8e6e0; padding:16px; } .sheet{ box-shadow:0 4px 24px rgba(0,0,0,.15); margin:0 auto; } }
+      @media screen { body{ background:#e8e6e0; padding:16px; } .sheet{ box-shadow:0 4px 24px rgba(0,0,0,.15); margin:0 auto 16px; } }
       .printbar { position:fixed; top:0; left:0; right:0; background:#1c1a17; color:#fff; padding:12px 16px;
         font-family:'Poppins',sans-serif; font-size:14px; display:flex; justify-content:space-between; align-items:center; z-index:10; }
       .printbar button { background:#a8443a; color:#fff; border:none; border-radius:8px; padding:9px 18px; font-size:14px; font-weight:600; font-family:inherit; }
-      @media print { .printbar { display:none !important; } body{ background:#fff; padding:0; } .sheet{ box-shadow:none; } }
+      @media print { .printbar { display:none !important; } body{ background:#fff; padding:0; } .sheet{ box-shadow:none; margin:0; } }
     </style></head>
     <body>
       <div class="printbar">To save: tap Print, then Save to Files (PDF)
         <button onclick="window.print()">Print / Save PDF</button></div>
       <div style="height:52px;"></div>
-      <div class="sheet">${inner}</div>
+      ${sheets}
     </body></html>`;
 
   const w=window.open('','_blank');
@@ -468,33 +594,36 @@ function makePDF({billToLines, items, total, subtitle, filename}){
 }
 
 function genRecurring(){
-  const r=recData();
-  if(!r) return toast('Add a venue first');
-  if(!r.lines.length) return toast('No gig days fall in this month');
-  // collect the distinct gig dates across all performers for the group header
-  const allDates=[...new Set(r.lines.flatMap(l=>l.dates))].sort((a,b)=>a-b);
-  const dayNames=[...new Set(r.lines.map(l=>WD[l.weekday]))];
-  const items=[];
-  if(r.lines.length>1){
-    // group header (venue + days + dates once), then itemise each performer
-    items.push({header:`${r.venue.name} — ${dayNames.join(' & ')}s`, sub:`${allDates.join(', ')} ${MONTHS[r.m]}`});
-    r.lines.forEach(l=>items.push({
-      desc:l.performer, qty:l.qty, price:l.rate, amount:l.amount, indent:true
-    }));
-  } else {
-    // single performer: keep a normal descriptive line, no header needed
-    const l=r.lines[0];
-    items.push({
-      desc:`${r.venue.name} ${WD[l.weekday]}s — ${l.performer} (${l.dates.join(', ')} ${MONTHS[r.m]})`,
-      qty:l.qty, price:l.rate, amount:l.amount
+  const startM=parseInt(genMonth.value), startY=parseInt(genYear.value);
+  const months=parseInt(genMonths?genMonths.value:1)||1;
+  if(isNaN(startM)||isNaN(startY)) return toast('Pick a month and year');
+  const vi=parseInt(genVenue.value); if(isNaN(vi)||!data.venues[vi]) return toast('Add a venue first');
+
+  const pages=[]; const names=[]; let num=data.counter; let grandFirst=null;
+  for(let k=0;k<months;k++){
+    const mm=(startM+k)%12, yy=startY+Math.floor((startM+k)/12);
+    const r=recData(mm,yy);
+    if(!r||!r.lines.length) continue; // skip months with no gigs
+    const docNo=(data.profile.prefix||'')+String(num);
+    pages.push({
+      billToLines:[r.venue.billName||r.venue.name, r.venue.billAttn?'Attn: '+r.venue.billAttn:'', r.venue.billAddr||''],
+      items:recItems(r), total:r.total,
+      subtitle:`Performance services — ${MONTHS[mm]} ${yy}`,
+      docType:'INVOICE', docNo, dateObj:lastGigDate(r)
     });
+    names.push(MONTHS[mm].slice(0,3));
+    if(grandFirst==null) grandFirst=docNo;
+    num++;
   }
-  const fname=safeName(`${nextNoStr()} ${r.venue.name} ${MONTHS[r.m]} ${r.y}`)+'.pdf';
-  const ok=makePDF({
-    billToLines:[r.venue.billName||r.venue.name, r.venue.billAttn?'Attn: '+r.venue.billAttn:'', r.venue.billAddr||''],
-    items, total:r.total, subtitle:`Performance services — ${MONTHS[r.m]} ${r.y}`, filename:fname
-  });
-  if(ok){ data.counter++; save(); refreshNext(); toast('Opening invoice — tap Print to save'); }
+  if(!pages.length) return toast('No gig days fall in the selected months');
+
+  const v=data.venues[vi];
+  const fname=safeName(`${grandFirst} ${v.name} ${names[0]}${names.length>1?'-'+names[names.length-1]:''} ${startY}`)+'.pdf';
+  const ok=makePDF({pages, filename:fname});
+  if(ok){
+    data.counter=num; save(); refreshNext();
+    toast(pages.length>1?`${pages.length} invoices — tap Print to save`:'Opening invoice — tap Print to save');
+  }
 }
 
 function genAdhoc(){
@@ -513,7 +642,7 @@ function genAdhoc(){
 /* ---------- DATA ---------- */
 function refreshNext(){ nextNo.textContent=nextNoStr(); profileSummary(); }
 function exportData(){
-  const txt=JSON.stringify({profile:data.profile,venues:data.venues,counter:data.counter},null,2);
+  const txt=JSON.stringify({profile:data.profile,venues:data.venues,counter:data.counter,quoteCounter:data.quoteCounter,quotePrefix:data.quotePrefix},null,2);
   try {
     const blob=new Blob([txt],{type:'application/json'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
@@ -539,7 +668,7 @@ function initMonthYear(){
   perfList.innerHTML=''; addPerfRow();
   renderVenues(); initMonthYear();
   if(data.venues.length) hideVenueForm(); else showVenueForm();
-  addAdItem(); calcAd(); refreshNext();
+  addAdItem(); calcAd(); addQItem(); calcQ(); refreshNext();
 })();
 </script>
 </body>
