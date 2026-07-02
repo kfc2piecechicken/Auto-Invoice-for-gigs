@@ -75,8 +75,6 @@
   </div>
   <p class="sub">Recurring gigs auto-count weekdays in the month. One tap downloads a named PDF.</p>
 
-  <div id="noPdfWarn" class="warn hidden">PDF library didn't load — check your connection and refresh. The rest still works.</div>
-
   <!-- PROFILE -->
   <div class="card">
     <div class="between"><h2>Your details</h2><button id="pfToggle" onclick="toggleProfile()">Edit</button></div>
@@ -570,24 +568,57 @@ function makePDF(opts){
     `<div class="sheet"${i>0?' style="page-break-before:always;"':''}>${invoiceHTML(pg)}</div>`
   ).join('');
   const docHTML=`<!DOCTYPE html><html><head><meta charset="utf-8">
+    <meta name="viewport" content="width=210mm">
     <title>${esc((filename||'document').replace(/\.pdf$/,''))}</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-      @page { size: A4; margin: 0; }
-      * { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-      html,body { margin:0; padding:0; background:#fff; }
+      @page { size: A4 portrait; margin: 0; }
+      * { -webkit-print-color-adjust:exact; print-color-adjust:exact; box-sizing:border-box; }
+      html,body { margin:0; padding:0; background:#fff; -webkit-text-size-adjust:100%; }
       .sheet { width:210mm; min-height:297mm; }
-      @media screen { body{ background:#e8e6e0; padding:16px; } .sheet{ box-shadow:0 4px 24px rgba(0,0,0,.15); margin:0 auto 16px; } }
+      /* On screen: scale the A4 sheet down to fit narrow phone viewports so the preview isn't clipped. */
+      @media screen {
+        body{ background:#e8e6e0; padding:16px 0; }
+        .scaler{ width:100%; overflow-x:hidden; }
+        .sheet{ box-shadow:0 4px 24px rgba(0,0,0,.15); margin:0 auto 16px; transform-origin:top center; }
+      }
       .printbar { position:fixed; top:0; left:0; right:0; background:#1c1a17; color:#fff; padding:12px 16px;
-        font-family:'Poppins',sans-serif; font-size:14px; display:flex; justify-content:space-between; align-items:center; z-index:10; }
-      .printbar button { background:#a8443a; color:#fff; border:none; border-radius:8px; padding:9px 18px; font-size:14px; font-weight:600; font-family:inherit; }
-      @media print { .printbar { display:none !important; } body{ background:#fff; padding:0; } .sheet{ box-shadow:none; margin:0; } }
+        font-family:'Poppins',sans-serif; font-size:14px; display:flex; justify-content:space-between; align-items:center; gap:12px; z-index:10; }
+      .printbar button { background:#a8443a; color:#fff; border:none; border-radius:8px; padding:9px 18px; font-size:14px; font-weight:600; font-family:inherit; white-space:nowrap; }
+      /* On print: force true A4, no scaling, no shrink-to-fit. */
+      @media print {
+        .printbar { display:none !important; }
+        body{ background:#fff; padding:0; }
+        .scaler{ width:auto; overflow:visible; }
+        .sheet{ box-shadow:none; margin:0; transform:none !important; width:210mm; }
+      }
     </style></head>
     <body>
       <div class="printbar">To save: tap Print, then Save to Files (PDF)
         <button onclick="window.print()">Print / Save PDF</button></div>
       <div style="height:52px;"></div>
-      ${sheets}
+      <div class="scaler">${sheets}</div>
+      <script>
+        // Fit the A4 preview to the phone screen without affecting the printed output.
+        (function(){
+          var MM_PX = 96/25.4;            // CSS px per mm
+          var SHEET_W = 210 * MM_PX;      // A4 width in px
+          function fit(){
+            if (window.matchMedia && window.matchMedia('print').matches) return;
+            var avail = document.documentElement.clientWidth - 24;
+            var scale = Math.min(1, avail / SHEET_W);
+            var sheets = document.querySelectorAll('.sheet');
+            for (var i=0;i<sheets.length;i++){
+              sheets[i].style.transform = 'scale('+scale+')';
+              // reserve correct vertical space after scaling
+              sheets[i].style.marginBottom = (16 - sheets[i].offsetHeight*(1-scale)) + 'px';
+            }
+          }
+          window.addEventListener('resize', fit);
+          window.addEventListener('load', fit);
+          fit();
+        })();
+      <\/script>
     </body></html>`;
 
   const w=window.open('','_blank');
